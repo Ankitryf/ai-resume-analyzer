@@ -5,24 +5,27 @@ from typing import List, Dict, Tuple, Optional
 from app.config import settings
 from app.nlp_utils import ResumeParser
 
+
 class EnhancedSemanticAnalyzer:
     """LLM-powered semantic analysis for recruiter-style resume evaluation"""
-    
+
     def __init__(self):
         if settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.model = genai.GenerativeModel("gemini-pro")
         else:
             self.model = None
-    
+
     # ============ CORE ANALYSIS METHODS ============
-    
-    def analyze_experience_match(self, resume_text: str, job_description: str) -> Tuple[float, str, List[str], List[str]]:
+
+    def analyze_experience_match(
+        self, resume_text: str, job_description: str
+    ) -> Tuple[float, str, List[str], List[str]]:
         """Analyze experience match semantically (not just keywords)"""
-        
+
         if not self.model:
             return 0.0, "Experience analysis unavailable", [], []
-        
+
         prompt = f"""Analyze the candidate's experience against this job role semantically.
 
 RESUME:
@@ -46,7 +49,7 @@ Return JSON:
 }}
 
 Only return valid JSON."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = json.loads(response.text)
@@ -54,22 +57,24 @@ Only return valid JSON."""
                 result.get("match_score", 0) / 100.0,
                 result.get("explanation", ""),
                 result.get("matched_areas", []),
-                result.get("gaps", [])
+                result.get("gaps", []),
             )
         except Exception as e:
             print(f"Error analyzing experience: {str(e)}")
             return 0.0, "Analysis error", [], []
-    
-    def generate_strengths_weaknesses(self, 
-                                     resume_text: str, 
-                                     job_description: str,
-                                     matched_keywords: List[str],
-                                     missing_keywords: List[str]) -> Tuple[List[str], List[str]]:
+
+    def generate_strengths_weaknesses(
+        self,
+        resume_text: str,
+        job_description: str,
+        matched_keywords: List[str],
+        missing_keywords: List[str],
+    ) -> Tuple[List[str], List[str]]:
         """Generate meaningful strengths and weaknesses"""
-        
+
         if not self.model:
             return [], []
-        
+
         prompt = f"""Based on this resume and job description, generate meaningful strengths and weaknesses.
 
 RESUME:
@@ -96,7 +101,7 @@ Analyze semantically and return:
 }}
 
 Be specific and meaningful. Max 5 each."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = json.loads(response.text)
@@ -104,13 +109,15 @@ Be specific and meaningful. Max 5 each."""
         except Exception as e:
             print(f"Error generating strengths/weaknesses: {str(e)}")
             return [], []
-    
-    def generate_improved_bullets(self, resume_text: str, job_description: str) -> List[Dict]:
+
+    def generate_improved_bullets(
+        self, resume_text: str, job_description: str
+    ) -> List[Dict]:
         """Generate improved, recruiter-friendly resume bullets with quantification"""
-        
+
         if not self.model:
             return []
-        
+
         prompt = f"""Improve this resume's experience bullets to be more recruiter-friendly and quantified.
 
 RESUME:
@@ -140,7 +147,7 @@ Return JSON array:
 ]
 
 Focus on impact and metrics."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = json.loads(response.text)
@@ -148,16 +155,15 @@ Focus on impact and metrics."""
         except Exception as e:
             print(f"Error improving bullets: {str(e)}")
             return []
-    
-    def generate_project_recommendations(self, 
-                                        resume_text: str, 
-                                        job_description: str,
-                                        skill_gaps: List[str]) -> List[Dict]:
+
+    def generate_project_recommendations(
+        self, resume_text: str, job_description: str, skill_gaps: List[str]
+    ) -> List[Dict]:
         """Generate 2 detailed project recommendations with ATS impact"""
-        
+
         if not self.model:
             return []
-        
+
         prompt = f"""Generate 2 specific projects to help this candidate win the job.
 
 CANDIDATE SUMMARY:
@@ -190,7 +196,7 @@ Return exactly 2 projects:
 ]
 
 Each project increases ATS match by X% based on job fit."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = json.loads(response.text)
@@ -198,18 +204,24 @@ Each project increases ATS match by X% based on job fit."""
         except Exception as e:
             print(f"Error generating projects: {str(e)}")
             return []
-    
-    def generate_recruiter_verdict(self,
-                                  experience_match: float,
-                                  strengths: List[str],
-                                  weaknesses: List[str],
-                                  ats_score: float,
-                                  skill_gaps: List[str]) -> Tuple[str, str, str]:
+
+    def generate_recruiter_verdict(
+        self,
+        experience_match: float,
+        strengths: List[str],
+        weaknesses: List[str],
+        ats_score: float,
+        skill_gaps: List[str],
+    ) -> Tuple[str, str, str]:
         """Generate detailed recruiter verdict with recommendation"""
-        
+
         if not self.model:
-            return "Moderate Match", "Candidate shows potential", "Ready with improvements"
-        
+            return (
+                "Moderate Match",
+                "Candidate shows potential",
+                "Ready with improvements",
+            )
+
         prompt = f"""As a senior recruiter, provide a verdict on this candidate.
 
 PROFILE:
@@ -228,25 +240,27 @@ Provide assessment:
 }}
 
 Be honest but constructive."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = json.loads(response.text)
             return (
                 result.get("recommendation", "Moderate Match"),
                 result.get("verdict", ""),
-                result.get("readiness", "Ready with Projects")
+                result.get("readiness", "Ready with Projects"),
             )
         except Exception as e:
             print(f"Error generating verdict: {str(e)}")
             return "Moderate Match", "Assessment unavailable", "Needs evaluation"
-    
-    def generate_keyword_analysis(self, resume_text: str, job_description: str) -> Tuple[List[str], List[str], int, int]:
+
+    def generate_keyword_analysis(
+        self, resume_text: str, job_description: str
+    ) -> Tuple[List[str], List[str], int, int]:
         """Semantic keyword analysis (not just string matching)"""
-        
+
         if not self.model:
             return [], [], 0, 0
-        
+
         prompt = f"""Extract keywords semantically from resume and job description.
 
 RESUME:
@@ -270,7 +284,7 @@ Return:
 }}
 
 Focus on meaningful technical terms."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = json.loads(response.text)
@@ -278,27 +292,31 @@ Focus on meaningful technical terms."""
                 result.get("matched", []),
                 result.get("missing", []),
                 result.get("matched_count", 0),
-                result.get("missing_count", 0)
+                result.get("missing_count", 0),
             )
         except Exception as e:
             print(f"Error in keyword analysis: {str(e)}")
             return [], [], 0, 0
-    
+
     # ============ HELPER METHODS ============
-    
-    def calculate_skill_gap_score(self, missing_count: int, matched_count: int) -> float:
+
+    def calculate_skill_gap_score(
+        self, missing_count: int, matched_count: int
+    ) -> float:
         """Calculate skill gap score (0-100)"""
         total = missing_count + matched_count
         if total == 0:
             return 0.0
         return (matched_count / total) * 100
-    
-    def infer_skills_from_content(self, resume_text: str, job_description: str) -> Tuple[List[str], Dict]:
+
+    def infer_skills_from_content(
+        self, resume_text: str, job_description: str
+    ) -> Tuple[List[str], Dict]:
         """Extract inferred skills from projects, experience, and certifications"""
-        
+
         if not self.model:
             return [], {}
-        
+
         prompt = f"""Analyze this resume and infer skills from the projects, work experience, certifications and descriptions.
 
 RESUME:
@@ -317,7 +335,7 @@ Return a JSON object with:
 }}
 
 Only return valid JSON, no additional text."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = json.loads(response.text)
@@ -329,4 +347,5 @@ Only return valid JSON, no additional text."""
 
 class SemanticAnalyzer(EnhancedSemanticAnalyzer):
     """Backward compatibility wrapper"""
+
     pass
