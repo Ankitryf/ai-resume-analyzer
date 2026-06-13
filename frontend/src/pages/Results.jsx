@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import axios from 'axios'
 import { Download, Loader, ArrowLeft } from 'lucide-react'
+import client from '../api/client'
 import ATSScoreCard from '../components/ATSScoreCard'
 import ExperienceAnalysisCard from '../components/ExperienceAnalysisCard'
 import ProjectAnalysisCard from '../components/ProjectAnalysisCard'
@@ -21,7 +21,7 @@ export default function Results() {
   useEffect(() => {
     const fetchResults = async () => {
       try {
-        const response = await axios.get(`/api/analysis/${analysisId}`)
+        const response = await client.get(`/analysis/${analysisId}`)
         setAnalysis(response.data)
       } catch (err) {
         setError('Failed to load results. Please try again.')
@@ -35,7 +35,7 @@ export default function Results() {
 
   const handleDownloadReport = async () => {
     try {
-      const response = await axios.get(`/api/analysis/${analysisId}/report`, {
+      const response = await client.get(`/analysis/${analysisId}/report`, {
         responseType: 'blob'
       })
       const url = window.URL.createObjectURL(new Blob([response.data]))

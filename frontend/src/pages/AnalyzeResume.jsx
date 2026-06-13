@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
 import { Upload, Loader } from 'lucide-react'
+import client from '../api/client'
 
 export default function AnalyzeResume() {
   const navigate = useNavigate()
@@ -36,7 +36,7 @@ export default function AnalyzeResume() {
       formData.append('resume', resume)
       formData.append('jobDescription', jobDescription)
 
-      const response = await axios.post('/api/analyze', formData, {
+      const response = await client.post('/analyze', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
