@@ -5,6 +5,7 @@ from typing import Optional
 from io import BytesIO
 import uuid
 import os
+from pathlib import Path
 
 from app.database import get_db
 from app.models import (
@@ -17,21 +18,34 @@ from app.gemini_engine import GeminiRecommendationEngine
 from app.semantic_analyzer import SemanticAnalyzer
 from app.config import settings
 from app.routes.auth import get_current_user
+from app.rate_limit import rate_limit
+from app.upload_validation import validate_resume_upload
 
 router = APIRouter()
 
-@router.post("/analyze")
+@router.post(
+    "/analyze",
+    dependencies=[Depends(rate_limit(lambda: settings.ANALYSIS_RATE_LIMIT, "analysis"))],
+)
 async def analyze_resume(
     resume: UploadFile = File(...),
     jobDescription: str = Form(...),
+    aiProcessingConsent: bool = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Analyze resume against job description with intelligent recruiter-style evaluation"""
     
     try:
+        if not aiProcessingConsent:
+            raise HTTPException(
+                status_code=400,
+                detail="AI processing consent is required to analyze a resume.",
+            )
+
         # Read resume file
         resume_content = await resume.read()
+        validate_resume_upload(resume, resume_content)
         
         # Parse resume
         resume_text = ResumeParser.parse_resume(resume_content, resume.filename)
@@ -151,10 +165,11 @@ async def analyze_resume(
         db.add(job_desc_obj)
         db.flush()
         
+        safe_filename = Path(resume.filename or "resume").name
         resume_obj = Resume(
             user_id=current_user.id,
-            filename=resume.filename,
-            file_path=f"uploads/{uuid.uuid4()}_{resume.filename}",
+            filename=safe_filename,
+            file_path=f"uploads/{uuid.uuid4()}_{safe_filename}",
             original_text=resume_text
         )
         db.add(resume_obj)
@@ -294,9 +309,12 @@ async def analyze_resume(
             "aiEnabled": ai_enabled
         }
         
-    except Exception as e:
+    except HTTPException:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Resume analysis failed. Please try again.")
 
 @router.get("/analysis/{analysisId}")
 async def get_analysis(analysisId: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -304,7 +322,8 @@ async def get_analysis(analysisId: int, db: Session = Depends(get_db), current_u
     
     analysis = db.query(AnalysisResult).filter(
         AnalysisResult.id == analysisId,
-        AnalysisResult.user_id == current_user.id
+        AnalysisResult.user_id == current_user.id,
+        AnalysisResult.deleted_at.is_(None)
     ).first()
     
     if not analysis:
@@ -416,7 +435,8 @@ async def download_report(analysisId: int, db: Session = Depends(get_db), curren
     
     analysis = db.query(AnalysisResult).filter(
         AnalysisResult.id == analysisId,
-        AnalysisResult.user_id == current_user.id
+        AnalysisResult.user_id == current_user.id,
+        AnalysisResult.deleted_at.is_(None)
     ).first()
     
     if not analysis:

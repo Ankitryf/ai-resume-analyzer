@@ -7,12 +7,21 @@ export default function AnalyzeResume() {
   const navigate = useNavigate()
   const [resume, setResume] = useState(null)
   const [jobDescription, setJobDescription] = useState('')
+  const [aiProcessingConsent, setAiProcessingConsent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleResumeChange = (e) => {
     const file = e.target.files[0]
-    if (file && (file.type === 'application/pdf' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+    const isSupportedType = file && (
+      file.type === 'application/pdf' ||
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
+
+    if (file && file.size > 10 * 1024 * 1024) {
+      setError('Resume must be 10MB or smaller')
+      setResume(null)
+    } else if (isSupportedType) {
       setResume(file)
       setError('')
     } else {
@@ -27,6 +36,10 @@ export default function AnalyzeResume() {
       setError('Please upload a resume and enter a job description')
       return
     }
+    if (!aiProcessingConsent) {
+      setError('Please consent to AI processing before analyzing your resume')
+      return
+    }
 
     setLoading(true)
     setError('')
@@ -35,6 +48,7 @@ export default function AnalyzeResume() {
       const formData = new FormData()
       formData.append('resume', resume)
       formData.append('jobDescription', jobDescription)
+      formData.append('aiProcessingConsent', String(aiProcessingConsent))
 
       const response = await client.post('/analyze', formData, {
         headers: {
@@ -83,7 +97,7 @@ export default function AnalyzeResume() {
               </div>
             </div>
             {resume && (
-              <p className="text-green-600 text-sm mt-2">✓ {resume.name}</p>
+              <p className="text-green-600 text-sm mt-2">Selected: {resume.name}</p>
             )}
           </div>
 
@@ -101,6 +115,19 @@ export default function AnalyzeResume() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
+
+          <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={aiProcessingConsent}
+              onChange={(e) => setAiProcessingConsent(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>
+              I consent to sending my resume text and job description for AI-powered analysis.
+              I understand this may be processed by the configured AI provider.
+            </span>
+          </label>
 
           {/* Submit Button */}
           <button

@@ -30,7 +30,12 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/ai_resume_analyzer
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SECRET_KEY: ${SECRET_KEY:-local-development-secret-change-before-deploy}
+      ENVIRONMENT: development
       DEBUG: "True"
+      AUTH_RATE_LIMIT: 10
+      ANALYSIS_RATE_LIMIT: 5
+      RATE_LIMIT_WINDOW_SECONDS: 60
     depends_on:
       db:
         condition: service_healthy
@@ -47,7 +52,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      VITE_API_URL: http://localhost:8000/api
+      VITE_API_URL: /api
     volumes:
       - ./frontend:/app
       - /app/node_modules

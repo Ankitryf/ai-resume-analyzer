@@ -26,6 +26,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
 
     # Relationships
     resumes = relationship(
@@ -46,6 +47,7 @@ class Resume(Base):
     original_text = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="resumes")
@@ -73,6 +75,7 @@ class JobDescription(Base):
     title = Column(String)
     content = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
 
 
 class AnalysisResult(Base):
@@ -114,6 +117,7 @@ class AnalysisResult(Base):
     skill_gap_score = Column(Float, default=0.0)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="analyses")

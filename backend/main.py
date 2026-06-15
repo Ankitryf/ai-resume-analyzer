@@ -23,6 +23,9 @@ app = FastAPI(
     description="API for analyzing resumes against job descriptions",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
 # Add CORS middleware
