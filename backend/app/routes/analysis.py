@@ -1,13 +1,15 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
+from io import BytesIO
 import uuid
 import os
 
 from app.database import get_db
 from app.models import (
     AnalysisResult, Resume, JobDescription, KeywordMatch, MissingSkill, Recommendation,
-    ExperienceAnalysis, ProjectAnalysis, SkillGap, ProjectRecommendation, ResumeBullet, User
+    ExperienceAnalysis, ProjectAnalysis, SkillGap, ProjectRecommendation, ResumeBullet, ImprovedBullet, User
 )
 from app.schemas import AnalysisResultResponse
 from app.nlp_utils import ResumeParser, KeywordExtractor, ATSScorer
@@ -57,44 +59,88 @@ async def analyze_resume(
         
         # ============ NEW: Semantic Analysis ============
         semantic_analyzer = SemanticAnalyzer()
-        
-        # 1. Infer skills from projects, experience, certifications
-        inferred_skills, skill_sources = semantic_analyzer.infer_skills_from_content(
-            resume_text, jobDescription
+        ai_enabled = semantic_analyzer.model is not None
+        analysis_data = semantic_analyzer.analyze_resume_complete(
+        resume_text,
+        jobDescription
         )
-        
-        # 2. Analyze experience
-        experience_match, strengths, weaknesses, experience_assessment = semantic_analyzer.analyze_experience(
-            resume_text, jobDescription
+        # 0. Semantic keyword analysis + skill gap score
+        matched_kw = analysis_data.get("matched_keywords", [])
+        missing_kw = analysis_data.get("missing_keywords", [])
+
+        matched_count = len(matched_kw)
+        missing_count = len(missing_kw)
+
+        skill_gap_score = semantic_analyzer.calculate_skill_gap_score(
+            missing_count,
+            matched_count
         )
-        
+
+        inferred_skills = analysis_data.get("inferred_skills", [])
+
+        experience_match = analysis_data.get("experience_match", 0) / 100.0
+
+        exp_explanation = analysis_data.get(
+            "experience_explanation",
+            ""
+        )
+
+        matched_areas = []
+        exp_gaps = []
+
+        strengths = analysis_data.get("strengths", [])
+        weaknesses = analysis_data.get("weaknesses", [])
+            
         # 3. Analyze projects
-        project_analyses = semantic_analyzer.analyze_projects(resume_text, jobDescription)
-        
+        project_analyses = []
+
         # 4. Identify skill gaps
-        skill_gaps = semantic_analyzer.identify_skill_gaps(resume_text, jobDescription)
-        
+        skill_gaps = []
+
         # 5. Generate resume bullets
-        gap_names = [gap["skill"] for gap in skill_gaps]
-        resume_bullets = semantic_analyzer.generate_resume_bullets(resume_text, gap_names)
-        
+        gap_names = []
+        resume_bullets = []
+
+        # 5b. Generate improved bullets
+        improved_bullets_data = []
+
         # 6. Recommend projects
-        project_recommendations = semantic_analyzer.recommend_projects(resume_text, gap_names, jobDescription)
+        project_recommendations = []
         
-        # 7. Generate recruiter verdict
-        hiring_recommendation, recruiter_verdict, improvement_priorities = semantic_analyzer.generate_recruiter_verdict(
-            experience_match, strengths, weaknesses, ats_score, skill_gaps
+       # 7. Generate recruiter verdict
+
+        hiring_recommendation = analysis_data.get(
+            "hiring_recommendation",
+            "Unavailable"
+        )
+
+        recruiter_verdict = analysis_data.get(
+            "recruiter_verdict",
+            "Unavailable"
+        )
+
+        readiness = analysis_data.get(
+            "readiness_level",
+            "Unavailable"
+        )
+
+        improvement_priorities = analysis_data.get(
+            "recommendations",
+            []
         )
         
-        # Generate legacy recommendations for backward compatibility
-        recommendation_engine = GeminiRecommendationEngine()
-        recommendations = recommendation_engine.generate_recommendations(
-            resume_text,
-            jobDescription,
-            missing_skills,
-            missing_keywords,
-            ats_score
-        )
+       # Generate recommendations from master analysis
+
+        recommendations = [
+            {
+                "title": "AI Recommendation",
+                "description": rec,
+                "action": rec,
+                "priority": "medium",
+                "category": "general"
+            }
+            for rec in analysis_data.get("recommendations", [])
+        ]
         
         # ============ Save to Database ============
         
@@ -122,13 +168,20 @@ async def analyze_resume(
             format_score=ATSScorer.evaluate_format(resume_text),
             relevance_score=len(matching_keywords) / max(1, len(matching_keywords) + len(missing_keywords)) * 100,
             experience_match_score=experience_match * 100,
+            experience_match_explanation=exp_explanation,
             summary=f"Your resume has an ATS score of {ats_score}%. You've matched {len(matching_keywords)} keywords out of {len(matching_keywords) + len(missing_keywords)}.",
             recruiter_verdict=recruiter_verdict,
             hiring_recommendation=hiring_recommendation,
+            readiness_level=readiness,
             strengths=strengths,
             weaknesses=weaknesses,
             improvement_priorities=improvement_priorities,
-            inferred_skills=inferred_skills
+            inferred_skills=inferred_skills,
+            matched_keywords=matched_kw,
+            missing_keywords=missing_kw,
+            matched_keyword_count=matched_count,
+            missing_keyword_count=missing_count,
+            skill_gap_score=skill_gap_score
         )
         db.add(analysis)
         db.flush()
@@ -162,19 +215,13 @@ async def analyze_resume(
         # Save experience analyses
         for exp_text in ResumeParser.extract_sections(resume_text).get("Experience", "").split("\n\n"):
             if exp_text.strip():
-                # Find matching analysis from semantic analyzer
-                match_score = 50  # Default
-                relevant = []
-                missing = []
-                assessment = "Experience relevant to role"
-                
                 ea = ExperienceAnalysis(
                     analysis_id=analysis.id,
                     experience_entry=exp_text.strip(),
-                    match_score=match_score,
-                    relevant_skills=relevant,
-                    missing_skills=missing,
-                    assessment=assessment
+                    match_score=experience_match * 100,
+                    relevant_skills=matched_areas,
+                    missing_skills=exp_gaps,
+                    assessment=exp_explanation
                 )
                 db.add(ea)
         
@@ -224,6 +271,17 @@ async def analyze_resume(
                 section=bullet.get("section", "Experience")
             )
             db.add(rb)
+
+        # Save improved bullets
+        for bullet in improved_bullets_data:
+            ib = ImprovedBullet(
+                analysis_id=analysis.id,
+                original_text=bullet.get("original", ""),
+                improved_text=bullet.get("improved", ""),
+                impact_metric=bullet.get("metric"),
+                type=bullet.get("type", "achievement")
+            )
+            db.add(ib)
         
         db.commit()
         
@@ -232,7 +290,8 @@ async def analyze_resume(
             "status": "success",
             "atsScore": ats_score,
             "experienceMatch": experience_match * 100,
-            "hiringRecommendation": hiring_recommendation
+            "hiringRecommendation": hiring_recommendation,
+            "aiEnabled": ai_enabled
         }
         
     except Exception as e:
@@ -258,13 +317,20 @@ async def get_analysis(analysisId: int, db: Session = Depends(get_db), current_u
         "formatScore": analysis.format_score,
         "relevance": analysis.relevance_score,
         "experienceMatch": analysis.experience_match_score,
+        "experienceMatchExplanation": analysis.experience_match_explanation,
+        "skillGapScore": analysis.skill_gap_score or 0.0,
         "summary": analysis.summary,
         "recruiterVerdict": analysis.recruiter_verdict,
         "hiringRecommendation": analysis.hiring_recommendation,
+        "readinessLevel": analysis.readiness_level,
         "strengths": analysis.strengths or [],
         "weaknesses": analysis.weaknesses or [],
         "improvementPriorities": analysis.improvement_priorities or [],
         "inferredSkills": analysis.inferred_skills or [],
+        "matchedKeywords": analysis.matched_keywords or [],
+        "missingKeywords": analysis.missing_keywords or [],
+        "matchedKeywordCount": analysis.matched_keyword_count or 0,
+        "missingKeywordCount": analysis.missing_keyword_count or 0,
         "keywordMatches": [km.keyword for km in analysis.keyword_matches],
         "totalKeywords": len(analysis.keyword_matches),
         "presentSkills": [],
@@ -329,7 +395,17 @@ async def get_analysis(analysisId: int, db: Session = Depends(get_db), current_u
             }
             for rb in analysis.resume_bullets
         ],
-        "createdAt": analysis.created_at.isoformat()
+        "improvedBullets": [
+            {
+                "originalText": ib.original_text,
+                "improvedText": ib.improved_text,
+                "impactMetric": ib.impact_metric,
+                "type": ib.type
+            }
+            for ib in analysis.improved_bullets
+        ],
+        "createdAt": analysis.created_at.isoformat(),
+        "aiEnabled": bool(analysis.skill_gaps or analysis.experience_analyses or analysis.inferred_skills)
     }
     
     return response
@@ -345,6 +421,74 @@ async def download_report(analysisId: int, db: Session = Depends(get_db), curren
     
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    
-    # TODO: Generate PDF report
-    return {"message": "Report generation in progress"}
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.lib import colors
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    styles = getSampleStyleSheet()
+    h1 = styles["h1"]
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], spaceAfter=4)
+    body = styles["Normal"]
+    bullet_style = ParagraphStyle("bullet", parent=body, leftIndent=12, spaceAfter=2)
+
+    def section(title):
+        return [Spacer(1, 10), Paragraph(title, h2),
+                HRFlowable(width="100%", thickness=0.5, color=colors.grey)]
+
+    def bullets(items):
+        return [Paragraph(f"• {item}", bullet_style) for item in (items or [])]
+
+    score_color = "green" if analysis.ats_score >= 70 else ("orange" if analysis.ats_score >= 50 else "red")
+    created = analysis.created_at.strftime("%B %d, %Y")
+    filename = analysis.resume.filename if analysis.resume else "Resume"
+
+    story = [
+        Paragraph("Resume Analysis Report", h1),
+        Paragraph(f"<font color='grey'>Generated {created} &nbsp;|&nbsp; {filename}</font>", body),
+        Spacer(1, 14),
+
+        *section("ATS Score"),
+        Paragraph(f"<font color='{score_color}' size='18'><b>{analysis.ats_score:.1f}%</b></font>", body),
+        Paragraph(f"Format Score: {analysis.format_score:.1f}% &nbsp;|&nbsp; Experience Match: {analysis.experience_match_score:.1f}%", body),
+
+        *section("Hiring Recommendation"),
+        Paragraph(f"<b>{analysis.hiring_recommendation or 'N/A'}</b>", body),
+        Spacer(1, 6),
+        Paragraph(analysis.recruiter_verdict or "No verdict available.", body),
+
+        *section("Strengths"),
+        *bullets(analysis.strengths),
+
+        *section("Weaknesses"),
+        *bullets(analysis.weaknesses),
+
+        *section("Improvement Priorities"),
+        *bullets(analysis.improvement_priorities),
+
+        *section("Skill Gaps"),
+        *[Paragraph(f"• <b>{sg.skill_name}</b> [{sg.priority}] — {sg.why_it_matters}", bullet_style)
+          for sg in analysis.skill_gaps],
+
+        *section("Missing Skills"),
+        *[Paragraph(f"• {ms.skill_name} ({ms.importance})", bullet_style)
+          for ms in analysis.missing_skills],
+
+        *section("Recommendations"),
+        *[Paragraph(f"• <b>{r.title}</b>: {r.description}", bullet_style)
+          for r in analysis.recommendations],
+    ]
+
+    doc.build(story)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=analysis-{analysisId}.pdf"}
+    )

@@ -5,13 +5,15 @@ from typing import List, Dict, Tuple, Optional
 from app.config import settings
 from app.nlp_utils import ResumeParser
 
-class SemanticAnalyzer:
+from app.semantic_analyzer_v2 import EnhancedSemanticAnalyzer
+
+class SemanticAnalyzer(EnhancedSemanticAnalyzer):
     """LLM-powered semantic analysis for intelligent resume evaluation"""
     
     def __init__(self):
         if settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.model = genai.GenerativeModel('gemini-2.5-flash')
         else:
             self.model = None
     
@@ -42,7 +44,7 @@ Only return valid JSON, no additional text."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result.get("inferred_skills", []), result.get("skill_sources", {})
         except Exception as e:
             print(f"Error inferring skills: {str(e)}")
@@ -80,7 +82,7 @@ Only return valid JSON, no additional text."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return (
                 result.get("match_score", 0) / 100.0,
                 result.get("strengths", []),
@@ -122,7 +124,7 @@ Only return valid JSON, no additional text."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result.get("projects", [])
         except Exception as e:
             print(f"Error analyzing projects: {str(e)}")
@@ -162,7 +164,7 @@ Only return valid JSON array, no additional text."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result if isinstance(result, list) else []
         except Exception as e:
             print(f"Error identifying skill gaps: {str(e)}")
@@ -201,7 +203,7 @@ Only return valid JSON array, no additional text."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result if isinstance(result, list) else []
         except Exception as e:
             print(f"Error generating bullets: {str(e)}")
@@ -247,7 +249,7 @@ Return only valid JSON array, no additional text."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result if isinstance(result, list) else []
         except Exception as e:
             print(f"Error recommending projects: {str(e)}")
@@ -260,11 +262,11 @@ Return only valid JSON array, no additional text."""
         weaknesses: List[str],
         ats_score: float,
         skill_gaps: List[Dict]
-    ) -> Tuple[str, str, List[str]]:
-        """Generate recruiter-style verdict and improvement priorities"""
+    ) -> Tuple[str, str, str, List[str]]:
+        """Generate recruiter-style verdict with readiness level and improvement priorities"""
         
         if not self.model:
-            return "Moderate Match", "Candidate shows potential for this role.", ["Add missing skills", "Improve ATS score"]
+            return "Moderate Match", "Candidate shows potential for this role.", "Ready with Projects", ["Add missing skills", "Improve ATS score"]
         
         critical_gaps = len([g for g in skill_gaps if g.get("priority") == "critical"])
         
@@ -285,12 +287,14 @@ WEAKNESSES:
 Provide:
 1. Hiring recommendation (Strong Match / Moderate Match / Weak Match)
 2. A paragraph verdict explaining suitability
-3. Top 3 improvement priorities
+3. Readiness level (Ready Now / Ready with Projects / Needs More Work)
+4. Top 3 improvement priorities
 
 Return JSON:
 {{
     "recommendation": "Strong Match",
     "verdict": "Paragraph explaining why...",
+    "readiness": "Ready Now",
     "priorities": ["Priority 1", "Priority 2", "Priority 3"]
 }}
 
@@ -298,12 +302,13 @@ Only return valid JSON, no additional text."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return (
                 result.get("recommendation", "Moderate Match"),
                 result.get("verdict", "Candidate shows potential for this role."),
+                result.get("readiness", "Ready with Projects"),
                 result.get("priorities", [])
             )
         except Exception as e:
             print(f"Error generating verdict: {str(e)}")
-            return "Moderate Match", "Candidate shows potential for this role.", ["Add missing skills", "Improve ATS score"]
+            return "Moderate Match", "Candidate shows potential for this role.", "Ready with Projects", ["Add missing skills", "Improve ATS score"]

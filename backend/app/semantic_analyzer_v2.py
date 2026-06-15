@@ -11,7 +11,7 @@ class EnhancedSemanticAnalyzer:
     def __init__(self):
         if settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.model = genai.GenerativeModel('gemini-2.5-flash')
         else:
             self.model = None
     
@@ -49,7 +49,7 @@ Only return valid JSON."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return (
                 result.get("match_score", 0) / 100.0,
                 result.get("explanation", ""),
@@ -99,7 +99,7 @@ Be specific and meaningful. Max 5 each."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result.get("strengths", []), result.get("weaknesses", [])
         except Exception as e:
             print(f"Error generating strengths/weaknesses: {str(e)}")
@@ -143,7 +143,7 @@ Focus on impact and metrics."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result if isinstance(result, list) else []
         except Exception as e:
             print(f"Error improving bullets: {str(e)}")
@@ -193,7 +193,7 @@ Each project increases ATS match by X% based on job fit."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return result if isinstance(result, list) else []
         except Exception as e:
             print(f"Error generating projects: {str(e)}")
@@ -231,7 +231,7 @@ Be honest but constructive."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return (
                 result.get("recommendation", "Moderate Match"),
                 result.get("verdict", ""),
@@ -273,7 +273,7 @@ Focus on meaningful technical terms."""
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            result = self._parse_json(response.text)
             return (
                 result.get("matched", []),
                 result.get("missing", []),
@@ -286,6 +286,23 @@ Focus on meaningful technical terms."""
     
     # ============ HELPER METHODS ============
     
+    def _parse_json(self, text: str):
+        import json
+        import re
+
+        print("\n========== GEMINI RAW RESPONSE ==========")
+        print(repr(text))
+        print("=========================================\n")
+
+        text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+        text = re.sub(r"\s*```$", "", text)
+
+        print("\n========== CLEANED RESPONSE ==========")
+        print(repr(text))
+        print("======================================\n")
+
+        return json.loads(text.strip())
+
     def calculate_skill_gap_score(self, missing_count: int, matched_count: int) -> float:
         """Calculate skill gap score (0-100)"""
         total = missing_count + matched_count
@@ -307,26 +324,95 @@ RESUME:
 For each project or work experience entry, extract the technical skills that can be inferred.
 
 Return a JSON object with:
+
 {{
-    "inferred_skills": ["skill1", "skill2", ...],
-    "skill_sources": {{
-        "Backend Development": ["Built REST APIs using FastAPI and PostgreSQL"],
-        "API Development": ["Built REST APIs using FastAPI and PostgreSQL"],
-        ...
-    }}
+    "inferred_skills": [
+        "Python",
+        "FastAPI",
+        "PostgreSQL",
+        "Docker"
+    ]
 }}
 
-Only return valid JSON, no additional text."""
-        
+IMPORTANT:
+- Return STRICT JSON ONLY
+- No markdown
+- No explanations
+- No comments
+- No code fences
+- No trailing commas
+- Output must be parseable by json.loads()"""
+    
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
-            return result.get("inferred_skills", []), result.get("skill_sources", {})
+            result = self._parse_json(response.text)
+            return result.get("inferred_skills", []), {}
         except Exception as e:
             print(f"Error inferring skills: {str(e)}")
             return [], {}
+        
+    def analyze_resume_complete(
+        self,
+        resume_text: str,
+        job_description: str
+    ) -> Dict:
+        """
+        Single Gemini call that returns all analysis.
+        """
 
+        if not self.model:      
+            return {}
 
+        prompt = f"""
+        Analyze this resume against the job description.
+
+        RESUME:
+        {resume_text[:4000]}
+
+        JOB DESCRIPTION:
+        {job_description[:2000]}
+
+        Return ONLY valid JSON.
+        experience_match must be an integer from 0 and 100.
+        Do not use strings like "<0-100>" in the output. Use integers only.
+
+        {{
+            "experience_match": "<0-100>",
+            "matched_keywords": [],
+            "missing_keywords": [],
+            "strengths": [],
+            "weaknesses": [],
+            "skill_gaps": [],
+            "project_recommendations": [],
+            "recommendations": [],
+            "recruiter_verdict": "",
+            "hiring_recommendation": "",
+            "readiness_level": "",
+            "inferred_skills": []
+        }}
+        """
+
+        try:
+            print("MASTER GEMINI CALL STARTED")
+            response = self.model.generate_content(prompt)
+            return self._parse_json(response.text)
+
+        except Exception as e:
+            print(f"Master analysis failed: {e}")
+            return {
+            "experience_match": 0,
+            "matched_keywords": [],
+            "missing_keywords": [],
+            "strengths": [],
+            "weaknesses": [],
+            "skill_gaps": [],
+            "project_recommendations": [],
+            "recommendations": [],
+            "recruiter_verdict": "Unavailable",
+            "hiring_recommendation": "Unavailable",
+            "readiness_level": "Unavailable",
+            "inferred_skills": []
+            }
 class SemanticAnalyzer(EnhancedSemanticAnalyzer):
-    """Backward compatibility wrapper"""
-    pass
+        """Backward compatibility wrapper"""
+        pass
