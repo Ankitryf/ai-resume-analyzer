@@ -75,3 +75,5 @@ build/
 
 # Docker
 docker-compose.override.yml
+backend/venv311/
+documentation_content.txt

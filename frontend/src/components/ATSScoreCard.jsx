@@ -23,7 +23,10 @@ export default function ATSScoreCard({ score, details }) {
         <div className="text-sm text-gray-600 space-y-2">
           <p><strong>Keywords Matched:</strong> {details.keywordMatches}/{details.totalKeywords}</p>
           <p><strong>Format Score:</strong> {details.formatScore}%</p>
-          <p><strong>Relevance:</strong> {details.relevance}%</p>
+          <p>
+            <strong>Relevance:</strong>{" "}
+            {Number(details.relevance || 0).toFixed(1)}%
+          </p>
         </div>
       )}
     </div>

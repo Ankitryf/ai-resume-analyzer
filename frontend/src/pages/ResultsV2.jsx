@@ -238,7 +238,7 @@ const ResultsV2 = () => {
                   <div className="flex-1">
                     <h4 className="font-semibold text-gray-800">Enhance Experience Descriptions</h4>
                     <p className="text-sm text-gray-600 mt-1">
-                      Your experience match score is {analysis.experienceMatch}%. 
+                      Your experience match score is {Math.round(analysis.experienceMatch)}%.
                       Add more details about relevant projects and responsibilities that align with the job.
                     </p>
                     <div className="mt-2 text-xs text-orange-700 font-semibold">

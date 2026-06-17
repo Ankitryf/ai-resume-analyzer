@@ -1,8 +1,6 @@
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.rate_limit import limiter
 from app.database import Base, get_db
 from main import app
 
@@ -16,7 +14,6 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 Base.metadata.create_all(bind=engine)
 
-
 def override_get_db():
     try:
         db = TestingSessionLocal()
@@ -24,28 +21,10 @@ def override_get_db():
     finally:
         db.close()
 
-
 app.dependency_overrides[get_db] = override_get_db
-
-
-@pytest.fixture(autouse=True)
-def reset_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    limiter._requests.clear()
-    yield
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
-
 
 @pytest.fixture
 def db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    Base.metadata.create_all(bind=engine)
+    yield TestingSessionLocal()
+    Base.metadata.drop_all(bind=engine)

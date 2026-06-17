@@ -9,7 +9,6 @@ import SkillGapCard from '../components/SkillGapCard'
 import ProjectRecommendationCard from '../components/ProjectRecommendationCard'
 import ResumeBulletCard from '../components/ResumeBulletCard'
 import RecruiterSummaryCard from '../components/RecruiterSummaryCard'
-import RecommendationsList from '../components/RecommendationsList'
 
 export default function Results() {
   const { analysisId } = useParams()
@@ -76,6 +75,12 @@ export default function Results() {
   return (
     <div className="space-y-8">
       {/* Navigation */}
+      {analysis.aiEnabled === false && (
+        <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-5 py-3 rounded-lg text-sm flex items-start gap-2">
+          <span className="font-semibold">⚠ Limited Analysis:</span>
+          <span>AI-powered sections (skill gaps, experience match, project analysis) are unavailable because the Gemini API key is not configured. ATS score and keyword analysis are fully functional.</span>
+        </div>
+      )}
       <div className="flex items-center gap-4">
         <button
           onClick={() => navigate('/')}
@@ -144,15 +149,7 @@ export default function Results() {
       {/* Project Recommendations */}
       <ProjectRecommendationCard projects={analysis.projectRecommendations} />
 
-      {/* Legacy Recommendations for backward compatibility */}
-      {analysis.recommendations && analysis.recommendations.length > 0 && (
-        <>
-          <div className="border-t-2 border-gray-300 pt-8">
-            <h3 className="text-2xl font-bold text-gray-900 mb-6">Additional AI Recommendations</h3>
-          </div>
-          <RecommendationsList recommendations={analysis.recommendations} />
-        </>
-      )}
+     
 
       {/* Analysis Summary */}
       <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-l-4 border-blue-600 rounded-lg p-6">

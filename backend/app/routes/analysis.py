@@ -1,51 +1,32 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import Optional
 from io import BytesIO
 import uuid
-import os
-from pathlib import Path
 
 from app.database import get_db
 from app.models import (
     AnalysisResult, Resume, JobDescription, KeywordMatch, MissingSkill, Recommendation,
     ExperienceAnalysis, ProjectAnalysis, SkillGap, ProjectRecommendation, ResumeBullet, ImprovedBullet, User
 )
-from app.schemas import AnalysisResultResponse
 from app.nlp_utils import ResumeParser, KeywordExtractor, ATSScorer
-from app.gemini_engine import GeminiRecommendationEngine
 from app.semantic_analyzer import SemanticAnalyzer
-from app.config import settings
 from app.routes.auth import get_current_user
-from app.rate_limit import rate_limit
-from app.upload_validation import validate_resume_upload
 
 router = APIRouter()
 
-@router.post(
-    "/analyze",
-    dependencies=[Depends(rate_limit(lambda: settings.ANALYSIS_RATE_LIMIT, "analysis"))],
-)
+@router.post("/analyze")
 async def analyze_resume(
     resume: UploadFile = File(...),
     jobDescription: str = Form(...),
-    aiProcessingConsent: bool = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Analyze resume against job description with intelligent recruiter-style evaluation"""
     
     try:
-        if not aiProcessingConsent:
-            raise HTTPException(
-                status_code=400,
-                detail="AI processing consent is required to analyze a resume.",
-            )
-
         # Read resume file
         resume_content = await resume.read()
-        validate_resume_upload(resume, resume_content)
         
         # Parse resume
         resume_text = ResumeParser.parse_resume(resume_content, resume.filename)
@@ -99,27 +80,52 @@ async def analyze_resume(
             ""
         )
 
-        matched_areas = []
-        exp_gaps = []
+        _, matched_areas, exp_gaps, assessment = (
+            semantic_analyzer.analyze_experience(
+                resume_text,
+                jobDescription
+            )
+        )
 
         strengths = analysis_data.get("strengths", [])
         weaknesses = analysis_data.get("weaknesses", [])
             
         # 3. Analyze projects
-        project_analyses = []
+        project_analyses = semantic_analyzer.analyze_projects(
+            resume_text,
+            jobDescription
+        )
 
         # 4. Identify skill gaps
-        skill_gaps = []
+        skill_gaps = semantic_analyzer.identify_skill_gaps(
+            resume_text,
+            jobDescription
+        )
 
         # 5. Generate resume bullets
-        gap_names = []
-        resume_bullets = []
+        gap_names = [
+            g["skill"]
+            for g in skill_gaps
+        ]
+
+        resume_bullets = (
+            semantic_analyzer.generate_resume_bullets(
+                resume_text,
+                gap_names
+            )
+        )
 
         # 5b. Generate improved bullets
         improved_bullets_data = []
 
         # 6. Recommend projects
-        project_recommendations = []
+        project_recommendations = (
+            semantic_analyzer.recommend_projects(
+                resume_text,
+                gap_names,
+                jobDescription
+            )
+        )
         
        # 7. Generate recruiter verdict
 
@@ -157,7 +163,12 @@ async def analyze_resume(
         ]
         
         # ============ Save to Database ============
-        
+
+        relevance_score = (
+            matched_count /
+            max(1, matched_count + missing_count)
+        ) * 100
+
         job_desc_obj = JobDescription(
             title="Job Description",
             content=jobDescription
@@ -165,11 +176,10 @@ async def analyze_resume(
         db.add(job_desc_obj)
         db.flush()
         
-        safe_filename = Path(resume.filename or "resume").name
         resume_obj = Resume(
             user_id=current_user.id,
-            filename=safe_filename,
-            file_path=f"uploads/{uuid.uuid4()}_{safe_filename}",
+            filename=resume.filename,
+            file_path=f"uploads/{uuid.uuid4()}_{resume.filename}",
             original_text=resume_text
         )
         db.add(resume_obj)
@@ -181,10 +191,14 @@ async def analyze_resume(
             job_description_id=job_desc_obj.id,
             ats_score=ats_score,
             format_score=ATSScorer.evaluate_format(resume_text),
-            relevance_score=len(matching_keywords) / max(1, len(matching_keywords) + len(missing_keywords)) * 100,
+            relevance_score=relevance_score,
             experience_match_score=experience_match * 100,
             experience_match_explanation=exp_explanation,
-            summary=f"Your resume has an ATS score of {ats_score}%. You've matched {len(matching_keywords)} keywords out of {len(matching_keywords) + len(missing_keywords)}.",
+           summary=(
+                f"Your resume has an ATS score of {ats_score}%. "
+                f"You've matched {matched_count} keywords out of "
+                f"{matched_count + missing_count}."
+            ),
             recruiter_verdict=recruiter_verdict,
             hiring_recommendation=hiring_recommendation,
             readiness_level=readiness,
@@ -236,7 +250,7 @@ async def analyze_resume(
                     match_score=experience_match * 100,
                     relevant_skills=matched_areas,
                     missing_skills=exp_gaps,
-                    assessment=exp_explanation
+                    assessment=assessment
                 )
                 db.add(ea)
         
@@ -309,12 +323,9 @@ async def analyze_resume(
             "aiEnabled": ai_enabled
         }
         
-    except HTTPException:
+    except Exception as e:
         db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="Resume analysis failed. Please try again.")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/analysis/{analysisId}")
 async def get_analysis(analysisId: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -322,8 +333,7 @@ async def get_analysis(analysisId: int, db: Session = Depends(get_db), current_u
     
     analysis = db.query(AnalysisResult).filter(
         AnalysisResult.id == analysisId,
-        AnalysisResult.user_id == current_user.id,
-        AnalysisResult.deleted_at.is_(None)
+        AnalysisResult.user_id == current_user.id
     ).first()
     
     if not analysis:
@@ -435,8 +445,7 @@ async def download_report(analysisId: int, db: Session = Depends(get_db), curren
     
     analysis = db.query(AnalysisResult).filter(
         AnalysisResult.id == analysisId,
-        AnalysisResult.user_id == current_user.id,
-        AnalysisResult.deleted_at.is_(None)
+        AnalysisResult.user_id == current_user.id
     ).first()
     
     if not analysis:

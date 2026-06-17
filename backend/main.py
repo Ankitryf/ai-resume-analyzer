@@ -5,7 +5,6 @@ from app.config import settings
 from app.routes import analysis, auth, users
 from app.database import init_db
 
-
 # Startup and shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,16 +15,12 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print("Shutting down...")
 
-
 # Create FastAPI app
 app = FastAPI(
     title="AI Resume Analyzer API",
     description="API for analyzing resumes against job descriptions",
     version="1.0.0",
-    lifespan=lifespan,
-    docs_url=None if settings.is_production else "/docs",
-    redoc_url=None if settings.is_production else "/redoc",
-    openapi_url=None if settings.is_production else "/openapi.json",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -42,14 +37,16 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(analysis.router, prefix="/api", tags=["analysis"])
 
-
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
-
 # Root endpoint
 @app.get("/")
 async def root():
-    return {"message": "AI Resume Analyzer API", "version": "1.0.0", "docs": "/docs"}
+    return {
+        "message": "AI Resume Analyzer API",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }

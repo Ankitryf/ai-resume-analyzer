@@ -9,7 +9,6 @@ from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate, UserResponse, Token, LoginRequest
 from app.config import settings
-from app.rate_limit import rate_limit
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -27,7 +26,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     except JWTError:
         raise credentials_exception
     user = db.query(User).filter(User.username == username).first()
-    if user is None or not user.is_active or user.deleted_at is not None:
+    if user is None:
         raise credentials_exception
     return user
 
@@ -55,11 +54,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-@router.post(
-    "/register",
-    response_model=UserResponse,
-    dependencies=[Depends(rate_limit(lambda: settings.AUTH_RATE_LIMIT, "auth"))],
-)
+@router.post("/register", response_model=UserResponse)
 async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     """Register a new user"""
     
@@ -88,22 +83,13 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     
     return user
 
-@router.post(
-    "/login",
-    response_model=Token,
-    dependencies=[Depends(rate_limit(lambda: settings.AUTH_RATE_LIMIT, "auth"))],
-)
+@router.post("/login", response_model=Token)
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     """Login user and return access token"""
     
     user = db.query(User).filter(User.username == credentials.username).first()
     
-    if (
-        not user
-        or not user.is_active
-        or user.deleted_at is not None
-        or not verify_password(credentials.password, user.hashed_password)
-    ):
+    if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password"

@@ -1,7 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.config import settings
-import os
 
 # Create engine
 engine = create_engine(
@@ -17,7 +16,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Base class for models
 Base = declarative_base()
 
-
 def get_db():
     """Dependency for getting database session"""
     db = SessionLocal()
@@ -25,7 +23,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
 
 def init_db():
     """Initialize database tables"""

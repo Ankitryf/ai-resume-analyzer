@@ -66,27 +66,31 @@ JOB DESCRIPTION:
 
 Evaluate:
 1. How well does the candidate's experience match the role?
-2. What are the key strengths?
-3. What are the weaknesses?
-4. Overall assessment
+2. Which skills present in the resume are relevant to this role?
+3. Which skills required by the role are missing from the resume?
+4. What are the key strengths?
+5. What are the weaknesses?
+6. Overall assessment
 
 Return a JSON object:
 {{
     "match_score": 85,
+    "relevant_skills": ["Communication", "Excel", "Recruitment"],
+    "missing_skills": ["Payroll", "Benefits Administration"],
     "strengths": ["strength1", "strength2", "strength3"],
     "weaknesses": ["weakness1", "weakness2"],
     "assessment": "Paragraph explaining the candidate's suitability..."
 }}
 
 Only return valid JSON, no additional text."""
-        
+
         try:
             response = self.model.generate_content(prompt)
             result = self._parse_json(response.text)
             return (
                 result.get("match_score", 0) / 100.0,
-                result.get("strengths", []),
-                result.get("weaknesses", []),
+                result.get("relevant_skills", []),
+                result.get("missing_skills", []),
                 result.get("assessment", "")
             )
         except Exception as e:
