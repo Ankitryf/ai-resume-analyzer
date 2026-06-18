@@ -56,4 +56,3 @@ def rate_limit(limit_getter: Callable[[], int], scope: str):
         )
 
     return dependency
-

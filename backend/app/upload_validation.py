@@ -6,7 +6,6 @@ from fastapi import HTTPException, UploadFile, status
 
 from app.config import settings
 
-
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 
 
@@ -57,4 +56,3 @@ def validate_resume_upload(upload: UploadFile, content: bytes) -> None:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid DOCX file.",
             )
-

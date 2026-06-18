@@ -8,6 +8,7 @@ from io import BytesIO
 # Load spacy model
 nlp = spacy.load("en_core_web_sm")
 
+
 class ResumeParser:
     @staticmethod
     def extract_text_from_pdf(file_content: bytes) -> str:
@@ -36,9 +37,9 @@ class ResumeParser:
     @staticmethod
     def parse_resume(file_content: bytes, filename: str) -> str:
         """Parse resume file and extract text"""
-        if filename.endswith('.pdf'):
+        if filename.endswith(".pdf"):
             return ResumeParser.extract_text_from_pdf(file_content)
-        elif filename.endswith('.docx'):
+        elif filename.endswith(".docx"):
             return ResumeParser.extract_text_from_docx(file_content)
         else:
             raise ValueError("Unsupported file format")
@@ -53,9 +54,9 @@ class ResumeParser:
             "Education": "",
             "Skills": "",
             "Projects": "",
-            "Certifications": ""
+            "Certifications": "",
         }
-        
+
         section_keywords = {
             "Contact": ["contact", "email", "phone", "address"],
             "Summary": ["summary", "objective", "professional"],
@@ -63,93 +64,161 @@ class ResumeParser:
             "Education": ["education", "degree", "university"],
             "Skills": ["skills", "technical", "proficiencies"],
             "Projects": ["projects", "portfolio"],
-            "Certifications": ["certifications", "certificates"]
+            "Certifications": ["certifications", "certificates"],
         }
-        
-        lines = text.split('\n')
+
+        lines = text.split("\n")
         current_section = None
-        
+
         for line in lines:
             line_lower = line.lower()
             for section, keywords in section_keywords.items():
                 if any(keyword in line_lower for keyword in keywords):
                     current_section = section
                     break
-            
+
             if current_section:
                 sections[current_section] += line + "\n"
-        
+
         return sections
+
 
 class KeywordExtractor:
     COMMON_SKILLS = [
         # Programming Languages
-        "python", "java", "javascript", "c++", "c#", "ruby", "php", "swift", "kotlin",
-        "go", "rust", "typescript", "scala", "r", "matlab", "perl", "groovy",
-        
+        "python",
+        "java",
+        "javascript",
+        "c++",
+        "c#",
+        "ruby",
+        "php",
+        "swift",
+        "kotlin",
+        "go",
+        "rust",
+        "typescript",
+        "scala",
+        "r",
+        "matlab",
+        "perl",
+        "groovy",
         # Web Frameworks
-        "react", "angular", "vue.js", "django", "flask", "spring", "fastapi", "node.js",
-        "express", "laravel", "ruby on rails", "asp.net",
-        
+        "react",
+        "angular",
+        "vue.js",
+        "django",
+        "flask",
+        "spring",
+        "fastapi",
+        "node.js",
+        "express",
+        "laravel",
+        "ruby on rails",
+        "asp.net",
         # Databases
-        "sql", "mysql", "postgresql", "mongodb", "cassandra", "redis", "elasticsearch",
-        "oracle", "sqlserver", "dynamodb", "firestore",
-        
+        "sql",
+        "mysql",
+        "postgresql",
+        "mongodb",
+        "cassandra",
+        "redis",
+        "elasticsearch",
+        "oracle",
+        "sqlserver",
+        "dynamodb",
+        "firestore",
         # DevOps & Tools
-        "docker", "kubernetes", "jenkins", "git", "github", "gitlab", "aws", "azure",
-        "gcp", "terraform", "ansible", "ci/cd", "linux", "bash", "shell",
-        
+        "docker",
+        "kubernetes",
+        "jenkins",
+        "git",
+        "github",
+        "gitlab",
+        "aws",
+        "azure",
+        "gcp",
+        "terraform",
+        "ansible",
+        "ci/cd",
+        "linux",
+        "bash",
+        "shell",
         # Data Science
-        "machine learning", "deep learning", "nlp", "tensorflow", "pytorch", "scikit-learn",
-        "pandas", "numpy", "matplotlib", "seaborn", "jupyter",
-        
+        "machine learning",
+        "deep learning",
+        "nlp",
+        "tensorflow",
+        "pytorch",
+        "scikit-learn",
+        "pandas",
+        "numpy",
+        "matplotlib",
+        "seaborn",
+        "jupyter",
         # Cloud
-        "aws", "azure", "gcp", "cloud", "serverless", "lambda",
-        
+        "aws",
+        "azure",
+        "gcp",
+        "cloud",
+        "serverless",
+        "lambda",
         # Other
-        "rest api", "graphql", "microservices", "agile", "scrum", "jira",
-        "confluence", "slack", "communication", "problem-solving", "teamwork"
+        "rest api",
+        "graphql",
+        "microservices",
+        "agile",
+        "scrum",
+        "jira",
+        "confluence",
+        "slack",
+        "communication",
+        "problem-solving",
+        "teamwork",
     ]
-    
+
     @staticmethod
     def extract_skills(text: str) -> Tuple[List[str], List[str]]:
         """Extract present and identify missing skills from resume"""
         text_lower = text.lower()
         present_skills = []
-        
+
         for skill in KeywordExtractor.COMMON_SKILLS:
             if skill in text_lower:
                 if skill not in present_skills:
                     present_skills.append(skill)
-        
+
         return present_skills
 
     @staticmethod
-    def extract_keywords(text: str, job_description: str) -> Tuple[List[str], List[str]]:
+    def extract_keywords(
+        text: str, job_description: str
+    ) -> Tuple[List[str], List[str]]:
         """Extract matching and missing keywords"""
         doc = nlp(text.lower())
         job_doc = nlp(job_description.lower())
-        
+
         # Extract entities and noun chunks from job description
         job_keywords = set()
         for token in job_doc:
             if token.pos_ in ["NOUN", "PROPN"]:
                 job_keywords.add(token.text)
-        
+
         for chunk in job_doc.noun_chunks:
             job_keywords.add(chunk.text)
-        
+
         # Find matching keywords in resume
         matching = []
         missing = []
-        
+
         for keyword in job_keywords:
             if keyword in text.lower():
                 matching.append(keyword)
             else:
                 missing.append(keyword)
-        
+
         return matching, missing
+
 
 class ATSScorer:
     @staticmethod
@@ -159,10 +228,10 @@ class ATSScorer:
         keyword_matches: List[str],
         total_keywords: int,
         present_skills: List[str],
-        total_required_skills: int
+        total_required_skills: int,
     ) -> float:
         """Calculate ATS score based on multiple factors"""
-        
+
         # Keyword matching score (40%)
         if total_keywords > 0:
             keyword_score = (len(keyword_matches) / total_keywords) * 100
@@ -171,14 +240,8 @@ class ATSScorer:
 
         # Skill matching score (40%)
         required_skills = KeywordExtractor.extract_skills(job_description)
-        matched_skills = [
-            s for s in required_skills
-            if s in present_skills
-        ]
-        skill_score = (
-            len(matched_skills)
-            / max(1, len(required_skills))
-        ) * 100
+        matched_skills = [s for s in required_skills if s in present_skills]
+        skill_score = (len(matched_skills) / max(1, len(required_skills))) * 100
 
         # Format score (20%)
         format_score = ATSScorer.evaluate_format(resume_text)
@@ -192,17 +255,20 @@ class ATSScorer:
     def evaluate_format(text: str) -> float:
         """Evaluate resume format for ATS compatibility"""
         score = 100
-        
+
         # Deduct points for problematic content
         problematic_patterns = [
-            (r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", 5),  # URLs
+            (
+                r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+                5,
+            ),  # URLs
             (r"[^\x00-\x7F]", 2),  # Non-ASCII characters
             (r"<[^>]+>", 5),  # HTML tags
             (r"\b(?:image|chart|graph|photo)\b", 3),  # Image references
         ]
-        
+
         for pattern, deduction in problematic_patterns:
             if re.search(pattern, text):
                 score -= deduction
-        
+
         return max(0, min(100, score))
