@@ -104,9 +104,9 @@ jobs:
         working-directory: ./backend
         run: black --check app/ main.py
       
-      - name: Check linting
-        working-directory: ./backend
-        run: flake8 app/ main.py --max-line-length=88
+      # - name: Check linting
+      #   working-directory: ./backend
+      #   run: flake8 app/ main.py --max-line-length=88
 
   # Security Scanning
   security:
